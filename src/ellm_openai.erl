@@ -25,7 +25,7 @@
 -export([speech/1, speech/2]).
 -export([upload/1]).
 %% exported for testing
--export([encode_request/2, decode_reply/1]).
+-export([encode_request/2, decode_reply/1, headers/1]).
 
 -define(DEFAULT_BASEURL, "https://api.openai.com").
 -define(DEFAULT_MODEL, <<"gpt-4o">>).
@@ -204,17 +204,14 @@ post_multipart(Opts, Path, Data) ->
     end.
 
 headers(Opts) ->
-    case ellm_http:api_key(Opts, "OPENAI_API_KEY",
-			   [url_host(baseurl(Opts)), "openai.com"]) of
+    case ellm_http:api_key(Opts, baseurl(Opts), "OPENAI_API_KEY",
+			   "openai.com") of
 	{ok, Key} -> {ok, [{'Authorization', ["Bearer ", Key]}]};
 	Error -> Error
     end.
 
 baseurl(Opts) ->
     maps:get(baseurl, Opts, ?DEFAULT_BASEURL).
-
-url_host(Url) ->
-    maps:get(host, uri_string:parse(Url), "").
 
 to_bin(A) when is_atom(A) -> atom_to_binary(A);
 to_bin(S) -> iolist_to_binary(S).

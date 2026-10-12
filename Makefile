@@ -9,3 +9,6 @@ clean:
 	@if [ -d "c_src" -a -f "c_src/Makefile" ]; then (cd c_src && $(MAKE) clean); fi
 	@if [ -d "test" -a -f "test/Makefile" ]; then (cd test && $(MAKE) clean); fi
 #@END-DIR-DEFAULT-RULES@
+
+test: all
+	@(cd test && $(MAKE) test)

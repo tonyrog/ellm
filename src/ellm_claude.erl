@@ -22,7 +22,7 @@
 
 -export([chat/2, list_models/1]).
 %% exported for testing
--export([encode_request/2, decode_reply/1]).
+-export([encode_request/2, decode_reply/1, headers/1]).
 
 -define(DEFAULT_BASEURL, "https://api.anthropic.com").
 -define(DEFAULT_MODEL, <<"claude-opus-5-5">>).
@@ -189,8 +189,8 @@ stop_reason(Other) -> Other.
 %%
 
 headers(Opts) ->
-    case ellm_http:api_key(Opts, "ANTHROPIC_API_KEY",
-			   [url_host(baseurl(Opts)), "anthropic.com"]) of
+    case ellm_http:api_key(Opts, baseurl(Opts), "ANTHROPIC_API_KEY",
+			   "anthropic.com") of
 	{ok, Key} ->
 	    {ok, [{"x-api-key", Key},
 		  {"anthropic-version", ?API_VERSION}]};
@@ -200,9 +200,6 @@ headers(Opts) ->
 
 baseurl(Opts) ->
     maps:get(baseurl, Opts, ?DEFAULT_BASEURL).
-
-url_host(Url) ->
-    maps:get(host, uri_string:parse(Url), "").
 
 fallbacks(Opts) ->
     maps:get(fallbacks, Opts, "default").

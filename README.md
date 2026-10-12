@@ -6,6 +6,7 @@ Erlang LLM client with one API over several backends:
 |----------|---------------|-----------------------------|
 | `claude` | `ellm_claude` | Anthropic `/v1/messages`    |
 | `openai` | `ellm_openai` | OpenAI `/v1/chat/completions` (+ audio, files) |
+| `ollama` | `ellm_ollama` | Ollama (or any OpenAI compatible server) `/v1/chat/completions` |
 
 Depends on `rester` and OTP 27+ (`json` module).
 
@@ -32,6 +33,29 @@ Per backend option `apikey` in sys.config:
 Unset: `$ANTHROPIC_API_KEY` / `$OPENAI_API_KEY`, then `~/.authinfo` with
 `machine api.anthropic.com login USER apikey KEY` (or `anthropic.com`,
 `api.openai.com`, `openai.com`).
+
+Keys are bound to their server, so changing `baseurl` can not leak them:
+
+* claude/openai keys (option, environment, domain entry) are only sent
+  over https to `*.anthropic.com` / `*.openai.com`; an explicit key for
+  another host gives `{error, {untrusted_host, Host}}`
+* a `~/.authinfo` entry for the exact baseurl host is always used
+  (never over plain http to the vendor domains)
+* ollama sends no key unless `apikey` is set or `~/.authinfo` has an
+  entry for its host; it never reads `$OPENAI_API_KEY` etc.
+
+    make test                             %% key leak tests (fake keys, local fake server)
+
+## Ollama
+
+    ellm:ask("Hej", #{ backend => ollama,
+                       baseurl => "http://minserver:11434",
+                       model => "llama3.1" }).
+    ellm:show_models(ollama).             %% local models (/api/tags)
+
+Tool use needs a model with tool support (llama3.1, qwen2.5, ...). The
+context length is set on the server (`OLLAMA_CONTEXT_LENGTH`), the
+OpenAI compatible endpoint can not change it.
 
 ## Messages
 

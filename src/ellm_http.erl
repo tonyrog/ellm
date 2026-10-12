@@ -12,7 +12,7 @@
 -export([get_json/2]).
 -export([post_json/3]).
 -export([post/4]).
--export([api_key/3]).
+-export([api_key/4]).
 -export([get_auth_info/1, get_auth_info/2]).
 
 %% GET Url and decode a JSON reply
@@ -60,27 +60,68 @@ decode_body(ContentType, Body) ->
     {ContentType, Body}.
 
 %%
-%% Find the api key. Opts may contain apikey with:
+%% Find the api key for a request to Url. Opts may contain apikey with:
 %%   "sk-..."       the key itself
 %%   "$VAR"         read from environment variable VAR
-%%   ".authinfo"    look up Host in ~/.authinfo
-%% If not set, try the environment variable EnvVar, then ~/.authinfo.
-%% ~/.authinfo is searched for each host in Hosts, in order.
+%%   ".authinfo"    look up the host of Url in the authinfo file
+%% If not set, try the environment variable EnvVar, then the
+%% authinfo file for the host of Url and then for Domain.
 %%
--spec api_key(Opts::map(), EnvVar::string(), Hosts::[string()]) ->
-	  {ok, binary()} | {error, no_api_key}.
-api_key(Opts, EnvVar, Hosts) ->
-    Authinfo = [fun() -> authinfo_key(H) end || H <- Hosts],
+%% A key must not leak to another server, so only a key stored in the
+%% authinfo file under the exact host of Url is used everywhere (but
+%% not over plain http to the known vendor domains). All other keys
+%% (apikey option, environment, Domain entry) are only used when Url
+%% is https and its host is Domain or a subdomain of it.
+%% Domain 'any' (backends with no home server, like ollama) trusts
+%% explicit apikey options but never reads EnvVar or a Domain entry.
+%%
+%% Opts may contain authinfo => Filename (default ~/.authinfo).
+%%
+-spec api_key(Opts::map(), Url::string(), EnvVar::string()|undefined,
+	      Domain::string()|any) ->
+	  {ok, binary()} | {error, no_api_key | {untrusted_host, string()}}.
+api_key(Opts, Url, EnvVar, Domain) ->
+    #{ host := Host } = U = uri_string:parse(Url),
+    Trusted = trusted(maps:get(scheme, U, ""), Host, Domain),
+    AuthFile = maps:get(authinfo, Opts, default_authinfo()),
+    HostKey = case vendor_host(Host) andalso
+		      maps:get(scheme, U, "") =/= "https" of
+		  true -> [];
+		  false -> [fun() -> authinfo_key(Host, AuthFile) end]
+	      end,
+    {EnvKey, DomainKey} =
+	if Trusted, Domain =/= any ->
+		{[fun() -> env_key(EnvVar) end],
+		 [fun() -> authinfo_key(Domain, AuthFile) end]};
+	   true ->
+		{[], []}
+	end,
     case maps:get(apikey, Opts, undefined) of
 	undefined ->
-	    first([fun() -> env_key(EnvVar) end | Authinfo]);
+	    first(EnvKey ++ HostKey ++ DomainKey);
 	".authinfo" ->
-	    first(Authinfo);
+	    first(HostKey ++ DomainKey);
+	_ when not Trusted ->
+	    {error, {untrusted_host, Host}};
 	"$"++Var ->
 	    env_key(Var);
 	Key ->
 	    {ok, iolist_to_binary(Key)}
     end.
+
+-define(VENDOR_DOMAINS, ["openai.com", "anthropic.com"]).
+
+trusted(_Scheme, _Host, any) -> true;
+trusted("https", Host, Domain) -> in_domain(Host, Domain);
+trusted(_Scheme, _Host, _Domain) -> false.
+
+vendor_host(Host) ->
+    lists:any(fun(D) -> in_domain(Host, D) end, ?VENDOR_DOMAINS).
+
+in_domain(Host, Domain) ->
+    H = string:lowercase(Host),
+    D = string:lowercase(Domain),
+    (H =:= D) orelse lists:suffix("." ++ D, H).
 
 first([F|Fs]) ->
     case F() of
@@ -90,6 +131,8 @@ first([F|Fs]) ->
 first([]) ->
     {error, no_api_key}.
 
+env_key(undefined) ->
+    {error, no_api_key};
 env_key(Var) ->
     case os:getenv(Var) of
 	false -> {error, no_api_key};
@@ -97,8 +140,8 @@ env_key(Var) ->
 	Key -> {ok, list_to_binary(Key)}
     end.
 
-authinfo_key(Host) ->
-    case get_auth_info(Host) of
+authinfo_key(Host, Filename) ->
+    case get_auth_info(Host, Filename) of
 	{_User, Key} -> {ok, Key};
 	_ -> {error, no_api_key}
     end.
@@ -106,8 +149,10 @@ authinfo_key(Host) ->
 %% machine HOST login NAME password VALUE port NUMBER
 %% fixme: support gpg formatted file!
 get_auth_info(Host) ->
-    AuthInfoFilename = filename:join(os:getenv("HOME"),".authinfo"),
-    get_auth_info(Host, AuthInfoFilename).
+    get_auth_info(Host, default_authinfo()).
+
+default_authinfo() ->
+    filename:join(os:getenv("HOME"),".authinfo").
 
 get_auth_info(Host, Filename) ->
     case file:open(Filename, [binary, read]) of

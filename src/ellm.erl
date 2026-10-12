@@ -3,7 +3,7 @@
 %%% @doc
 %%%    Erlang LLM client, one API over several backends.
 %%%
-%%%    Backends: claude (Anthropic) and openai. The default backend
+%%%    Backends: claude (Anthropic), openai and ollama. The default backend
 %%%    is the application env `backend' (claude), a call can override
 %%%    it with the option `backend'.
 %%%
@@ -32,7 +32,7 @@
 -define(APP, ellm).
 -define(MAX_TOOL_ROUNDS, 25).
 
--type backend() :: claude | openai | module().
+-type backend() :: claude | openai | ollama | module().
 -type message() :: ellm_backend:message().
 -type tool() :: ellm_backend:tool().
 
@@ -297,4 +297,5 @@ resolve(Opts) ->
 -spec backend_module(backend()) -> module().
 backend_module(claude) -> ellm_claude;
 backend_module(openai) -> ellm_openai;
+backend_module(ollama) -> ellm_ollama;
 backend_module(Mod) when is_atom(Mod) -> Mod.
