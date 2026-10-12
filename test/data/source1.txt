@@ -1,0 +1,4 @@
+This text contain numbers like 16#1234
+in Erlang notation.
+Even 16#12345678 and 16#0 are examples
+of Erlang number constants
